@@ -37,8 +37,9 @@ namespace Dk.Dasm
             var minus = ToTerm("-");
             var lbracket = ToTerm("[");
             var rbracket = ToTerm("]");
+            var tilde = ToTerm("~");
 
-            MarkPunctuation(comma, colon, atsym, lbracket, rbracket);
+            MarkPunctuation(comma, colon, atsym, lbracket, rbracket, tilde);
             #endregion
 
             #region Non-Terminals
@@ -102,7 +103,15 @@ namespace Dk.Dasm
             DataArguments.Rule = MakePlusRule(DataArguments, comma, DataValue);
 
             MarkTransient(DataValue);
-            DataValue.Rule = stringLit | numberLit | charLit | ident;
+            DataValue.Rule = stringLit | LiteralWord;
+
+            if (options.DatLengthCounting)
+            {
+                var DataLength = new NonTerminal("DataLength");
+                DataValue.Rule = DataValue.Rule | DataLength;
+
+                DataLength.Rule = tilde;
+            }
 
             MarkTransient(Reg);
             Reg.Rule = GeneralReg | SpecialReg;
@@ -120,9 +129,35 @@ namespace Dk.Dasm
 
             StackOp.Rule = ToTerm("push") | "pop" | "peek";
 
-            LiteralWord.Rule = charLit | numberLit | ident;
+            var LiteralWordAtom = new NonTerminal("LiteralWordAtom");
+
+            LiteralWord.Rule = LiteralWordAtom;
+
+            MarkTransient(LiteralWordAtom);
+            LiteralWordAtom.Rule = charLit | numberLit | ident;
 
             LiteralLookup.Rule = "[" + LiteralWord + "]";
+            #endregion
+
+            #region Optional Non-Terminals
+            if (options.DifferenceLiteral)
+            {
+                var DifferenceLiteral = new NonTerminal("DifferenceLiteral");
+                var DifferenceLiteralOpt = new NonTerminal("DifferenceLiteral?");
+
+                // We do this rather than use LiteralWordAtom directly so
+                // that if something changes later on, we (hopefully) don't
+                // need to update this code.
+                var litword = LiteralWord.Rule;
+
+                // ~ lit | lit [ ~ lit ]
+                LiteralWord.Rule = DifferenceLiteral | litword + DifferenceLiteralOpt;
+
+                DifferenceLiteral.Rule = tilde + Named("DifferenceTo", litword);
+
+                MarkTransient(DifferenceLiteralOpt);
+                DifferenceLiteralOpt.Rule = tilde + Named("DifferenceTo", litword) | Empty;
+            }
             #endregion
 
             #region Language Flags
@@ -240,6 +275,19 @@ namespace Dk.Dasm
             /// this boils down to '$'.
             /// </summary>
             public bool ExtendedLabelNames = false;
+            /// <summary>
+            /// This allows you to use ~ in a dat statement which resolves
+            /// to the number of words remaining in the statement.
+            /// </summary>
+            public bool DatLengthCounting = false;
+            /// <summary>
+            /// Distance literals (~addr) are replaced with the
+            /// distance from their location to the specified address.
+            /// 
+            /// You can also use addr1~addr2 to compute the distance
+            /// between two arbitrary locations in code.
+            /// </summary>
+            public bool DifferenceLiteral = false;
 
             /// <summary>
             /// Options that conform to standard assembler syntax.
@@ -263,6 +311,8 @@ namespace Dk.Dasm
                     BinaryLiterals = true,
                     LocalLabels = true,
                     ExtendedLabelNames = true,
+                    DatLengthCounting = true,
+                    DifferenceLiteral = true,
                 };
             }
         }

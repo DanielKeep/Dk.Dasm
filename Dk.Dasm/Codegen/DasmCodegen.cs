@@ -34,6 +34,7 @@ namespace Dk.Dasm.Codegen
             Instruction,
             Literal,
             Label,
+            Difference,
         }
 
         /// <summary>
@@ -56,6 +57,13 @@ namespace Dk.Dasm.Codegen
             public CodeType Type;
             public CodeFlags Flags;
             public ushort Value;
+
+            public Code(CodeType type, ushort value)
+            {
+                this.Type = type;
+                this.Value = value;
+                this.Flags = CodeFlags.IsLiteral;
+            }
 
             public Code(Instruction instr)
             {
@@ -104,6 +112,25 @@ namespace Dk.Dasm.Codegen
         }
 
         /// <summary>
+        /// Represents a difference literal.
+        /// </summary>
+        public struct Difference
+        {
+            public Code Base, Target;
+
+            public Difference(Code @base, Code target)
+            {
+                this.Base = @base;
+                this.Target = target;
+            }
+
+            public Difference(ushort @base, Code target)
+                : this(new Code(@base), target)
+            {
+            }
+        }
+
+        /// <summary>
         /// This is the global label prepended to local labels
         /// *before* the first user-defined global label.
         /// </summary>
@@ -126,6 +153,16 @@ namespace Dk.Dasm.Codegen
             /// Emit a code word to the output.
             /// </summary>
             public CodeWriter Write;
+            /// <summary>
+            /// The current length of the code array.
+            /// </summary>
+            public Func<ushort> GetCurrentAddress;
+            /// <summary>
+            /// Callback to emit a difference to the code array.  We need
+            /// a separate callback since a difference won't actually
+            /// fit in a Code.
+            /// </summary>
+            public Func<Difference, Code> EncodeDifference;
         }
 
         /// <summary>
@@ -185,6 +222,12 @@ namespace Dk.Dasm.Codegen
              */
             var code = new List<Code>();
             /*
+             * This array stores difference literals.  We need to do this
+             * since difference literals can depend on labels but won't
+             * fit in a code.
+             */
+            var diffLits = new List<Difference>();
+            /*
              * We also need something to keep track of the defined labels.
              * Since we need to be able to pack this into code entries,
              * we'll stick them in a flat array.
@@ -229,10 +272,22 @@ namespace Dk.Dasm.Codegen
             {
                 code.Add(c);
             };
+            Func<Difference, Code> diffToCode = delegate(Difference diff)
+            {
+                var index = (ushort)diffLits.Count;
+                diffLits.Add(diff);
+                return new Code(CodeType.Difference, index);
+            };
             /*
              * Whack 'em in a context.
              */
-            var ctx = new CgContext { Lookup = lookup, Write = write };
+            var ctx = new CgContext
+            {
+                Lookup = lookup,
+                Write = write,
+                GetCurrentAddress = () => (ushort)code.Count,
+                EncodeDifference = diffToCode,
+            };
             /*
              * Ok, let's process those lines.
              */
@@ -265,6 +320,9 @@ namespace Dk.Dasm.Codegen
                             case CodeType.Label:
                                 label.Fix(labels[fix.Value], labelNode.Span);
                                 break;
+
+                            case CodeType.Difference:
+                                throw new CodegenException("Labels cannot be fixed to difference literals");
 
                             default:
                                 throw new UnexpectedGrammarException();
@@ -333,22 +391,31 @@ namespace Dk.Dasm.Codegen
             /*
              * Now we can produce the output image.
              */
+            Func<Code, ushort> evalCode = null;
+            evalCode = delegate(Code c)
+            {
+                switch (c.Type)
+                {
+                    case CodeType.Label:
+                        return labels[c.Value].Value;
+
+                    case CodeType.Difference:
+                        {
+                            var diff = diffLits[c.Value];
+                            return (ushort)(evalCode(diff.Target) - evalCode(diff.Base));
+                        }
+
+                    default:
+                        return c.Value;
+                }
+            };
+
             var image = new ushort[code.Count];
             {
                 var i = 0;
                 foreach (var c in code)
                 {
-                    switch (c.Type)
-                    {
-                        case CodeType.Label:
-                            image[i] = labels[c.Value].Value;
-                            break;
-
-                        default:
-                            image[i] = c.Value;
-                            break;
-                    }
-
+                    image[i] = evalCode(c);
                     ++i;
                 }
             }
@@ -431,51 +498,58 @@ namespace Dk.Dasm.Codegen
         {
             var args = node.ChildNodes[1];
 
+            var i = 0;
             foreach (var arg in args.ChildNodes)
-                CgDataValue(arg, ref ctx);
+            {
+                if (arg.Term.Name == "DataLength")
+                    ctx.Write(new Code(CountDataWords(args, i + 1, ref ctx)));
+
+                else
+                    CgDataValue(arg, ref ctx);
+
+                ++i;
+            }
+        }
+
+        public ushort CountDataWords(ParseTreeNode datNode, int startAt, ref CgContext ctx)
+        {
+            var acc = (ushort)0;
+
+            for (var i = startAt; i < datNode.ChildNodes.Count; ++i)
+            {
+                var val = datNode.ChildNodes[i];
+
+                switch (val.Term.Name)
+                {
+                    case "string":
+                        acc += (ushort)EvalString(val, ref ctx).Length;
+                        break;
+
+                    default:
+                        acc++;
+                        break;
+                }
+            }
+
+            return acc;
         }
 
         public void CgDataValue(ParseTreeNode node, ref CgContext ctx)
         {
             // DataValue is transient
-            // DataValue = string | number | character | identifier
-            switch (node.Term.Name)
+            // DataValue = [tilde |] string | number | character | identifier
+
+            // Note that ~ is handled by the caller since, by this point, it's
+            // too late to do anything.
+            if (node.Term.Name == "string")
             {
-                case "character":
-                    {
-                        var ch = EvalCharacter(node, ref ctx);
-                        ctx.Write(new Code(ch));
-                    }
-                    break;
-
-                case "identifier":
-                    {
-                        var l = EvalIdentifier(node, ref ctx);
-                        var c = new Code(l);
-                        c.Flags |= CodeFlags.IsLiteral;
-                        ctx.Write(c);
-                    }
-                    break;
-
-                case "number":
-                    {
-                        var v = EvalNumber(node, ref ctx);
-                        ctx.Write(new Code(v));
-                    }
-                    break;
-
-                case "string":
-                    {
-                        var s = EvalString(node, ref ctx);
-                        foreach (var ch in s)
-                        {
-                            ctx.Write(new Code(ch));
-                        }
-                    }
-                    break;
-
-                default:
-                    throw new UnexpectedGrammarException();
+                var s = EvalString(node, ref ctx);
+                foreach (var ch in s)
+                    ctx.Write(new Code(ch));
+            }
+            else
+            {
+                ctx.Write(EvalLiteralWord(node, ref ctx));
             }
         }
 
@@ -605,18 +679,43 @@ namespace Dk.Dasm.Codegen
 
         public Code EvalLiteralWord(ParseTreeNode node, ref CgContext ctx)
         {
-            var child = node.ChildNodes[0];
+            var head = node.ChildNodes[0];
+            var tail = node.ChildNodes.Count > 1 ? node.ChildNodes[1] : null;
+            
+            var code = EvalLiteralWordAtom(head, ref ctx);
 
-            switch (child.Term.Name)
+            if (tail != null)
             {
-                case "character":
-                    return new Code(EvalCharacter(child, ref ctx));
+                var tailC = EvalLiteralWordAtom(tail, ref ctx);
+                var diff = new Difference(code, tailC);
+                code = ctx.EncodeDifference(diff);
+            }
 
+            return code;
+        }
+
+        public Code EvalLiteralWordAtom(ParseTreeNode node, ref CgContext ctx)
+        {
+            switch (node.Term.Name)
+            {
                 case "identifier":
-                    return new Code(EvalIdentifier(child, ref ctx));
+                    return new Code(EvalIdentifier(node, ref ctx));
+
+                case "character":
+                    return new Code(EvalCharacter(node, ref ctx));
 
                 case "number":
-                    return new Code(EvalNumber(child, ref ctx));
+                    return new Code(EvalNumber(node, ref ctx));
+
+                case "DifferenceLiteral":
+                    {
+                        var @base = ctx.GetCurrentAddress();
+                        var target = EvalLiteralWordAtom(node.ChildNodes[0].ChildNodes[0], ref ctx);
+                        return ctx.EncodeDifference(new Difference(@base, target));
+                    }
+
+                case "DifferenceTo":
+                    return EvalLiteralWordAtom(node.ChildNodes[0], ref ctx);
 
                 default:
                     throw new UnexpectedGrammarException();
