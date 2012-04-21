@@ -15,6 +15,12 @@ namespace Dk.Dasm
     /// </summary>
     public class Assembler
     {
+        public Assembler()
+        {
+            OnMessage = DefaultMessageHandler;
+            OnOpenFile = DefaultOpenFileHandler;
+        }
+
         /// <summary>
         /// Performs assembly based on the given options object.
         /// </summary>
@@ -39,12 +45,11 @@ namespace Dk.Dasm
                 var p = new Parser(ld);
                 var pt = p.Parse(src, sourceFilePath);
 
-                // TODO: Move these out somewhere.
+                // Emit error messages.
                 if (pt.ParserMessages.Count > 0)
                 {
                     foreach (var msg in pt.ParserMessages)
-                        Console.Error.WriteLine("{0}{1}: {2}",
-                            sourceFilePath, msg.Location, msg.Message);
+                        Error(sourceFilePath, msg.Location, msg.Message);
                     throw new CodegenException("Compilation failed.");
                 }
 
@@ -65,7 +70,7 @@ namespace Dk.Dasm
              * Write the output file.
              */
 
-            using (var target = new FileStream(options.TargetPath, FileMode.Create))
+            using (var target = OpenFile(options.TargetPath, FileMode.Create))
             {
                 switch (options.TargetFormat)
                 {
@@ -143,7 +148,7 @@ namespace Dk.Dasm
 
             if (options.DumpSymbols)
             {
-                using (var f = new FileStream(
+                using (var f = OpenFile(
                     Path.ChangeExtension(options.TargetPath, "sym"),
                     FileMode.Create))
                 {
@@ -161,9 +166,69 @@ namespace Dk.Dasm
             }
         }
 
+        public enum MessageType
+        {
+            Error,
+        }
+
+        public struct Message
+        {
+            public string Path;
+            public int Line, Column;
+            public MessageType Type;
+            public string Text;
+        }
+
+        #region Callbacks
+        public delegate void MessageDelegate(ref Message message);
+        public MessageDelegate OnMessage;
+
+        public delegate Stream OpenFileDelegate(string path, FileMode mode);
+        public OpenFileDelegate OnOpenFile;
+        #endregion
+
+        #region Callback implementation & interface
+        private void DefaultMessageHandler(ref Message msg)
+        {
+            Console.WriteLine("{0}({1}:{2}): {3}: {4}",
+                msg.Path, msg.Line + 1, msg.Column + 1, msg.Type, msg.Text);
+        }
+
+        private Stream DefaultOpenFileHandler(string path, FileMode mode)
+        {
+            return new FileStream(path, mode);
+        }
+
+        private void Error(string path, SourceLocation location, string text)
+        {
+            if (OnMessage == null)
+                return;
+
+            var msg = new Message()
+            {
+                Path = path,
+                Line = location.Line,
+                Column = location.Column,
+                Type = MessageType.Error,
+                Text = text,
+            };
+        }
+
+        private Stream OpenFile(string path, FileMode mode)
+        {
+            return OnOpenFile(path, mode);
+        }
+        #endregion
+
         private string ReadFile(string path)
         {
-            return File.ReadAllText(path);
+            using (var f = OpenFile(path, FileMode.Open))
+            {
+                using (var tr = new StreamReader(f))
+                {
+                    return tr.ReadToEnd();
+                }
+            }
         }
     }
 
