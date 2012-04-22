@@ -627,7 +627,8 @@ namespace Dk.Dasm.Codegen
             {
                 regNum = GeneralRegNumber(lhs.ChildNodes[0].Token.Text);
                 offsetCode = EvalLiteralWord(rhs, ref ctx);
-                if (op.Token.Text == "-")
+                // Note: op is actually wrapped in an unnamed production.
+                if (op.ChildNodes[0].Token.Text == "-")
                     offsetCode.Negate();
             }
             else
