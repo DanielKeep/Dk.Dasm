@@ -212,6 +212,8 @@ namespace Dk.Dasm
                 Type = MessageType.Error,
                 Text = text,
             };
+
+            OnMessage(ref msg);
         }
 
         private Stream OpenFile(string path, FileMode mode)
