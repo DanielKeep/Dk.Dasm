@@ -9,6 +9,9 @@ namespace Dk.Dasm
     public enum TokenType
     {
         Invalid,
+        
+        Eol,
+        Eos,
 
         Number,
         Character,
@@ -58,6 +61,22 @@ namespace Dk.Dasm
                 formatPrefix = @"(?<format>[RrYyGgAaBbPpZzWw]([RrYyGgAaBbPpZzWw]([!])?)?)?";
 
             {
+            	var pattern = "^[ \t]*";
+            	WhitespaceRegex = new Regex(pattern);
+            }
+            {
+            	var pattern = "^;.*";
+            	CommentRegex = new Regex(pattern);
+            }
+            {
+            	var pattern = @"^\r\n|\r|\n";
+            	EolRegex = new Regex(pattern);
+            }
+            {
+            	var pattern = "$";
+            	EosRegex = new Regex(pattern);
+            }
+            {
                 var pattern = "^";
 
                 if (options.SignedNumbers)
@@ -105,14 +124,178 @@ namespace Dk.Dasm
 
                 IdentifierRegex = new Regex(pattern, RegexOptions.IgnoreCase);
             }
+            {
+            	var pattern = "^#\s*include\s";
+            	HashIncludeRegex = new Regex(pattern, RegexOptions.IgnoreCase);
+            }
+            {
+            	var pattern = "^#\s*macro\s";
+            	HashMacroRegex = new Regex(pattern, RegexOptions.IgnoreCase);
+            }
+            {
+            	var pattern = "^(?<value>.+)|\"(?<value>[^\"]+)\"";
+            	IncludePathRegex = new Regex(pattern);
+            }
         }
 
         private TokeniserOptions options;
 
+        private Regex WhitespaceRegex;
+        private Regex CommentRegex;
+        private Regex EolRegex;
+        private Regex EosRegex;
         private Regex NumberRegex;
         private Regex CharacterRegex;
         private Regex StringRegex;
         private Regex IdentifierRegex;
+        private Regex HashIncludeRegex;
+        private Regex HashMacroRegex;
+        private Regex IncludePathRegex;
+        
+        private delegate Token? Eater(ref Source src);
+        private Eater forceNextEater = null;
+        
+        public bool TokeniseLine(ref Source src,
+                                 ref List<Token> tokens,
+                                 ref List<Token> comments)
+        {
+        	while (true)
+        	{
+        		var tok = NextToken(ref src);
+        		if (tok.Type == TokenType.Comment)
+        			comments.Add(tok);
+        		
+        		else if (tok.Type == TokenType.Eol)
+        			return true;
+        		
+        		else if (tok.Type == TokenType.Eos)
+        			return false;
+        		
+        		else
+        			tokens.Add(tok);
+        	}
+        }
+        
+        public Token NextToken(ref Source src)
+        {
+        	DropWhitespace(src);
+        	Token? tok = null;
+        	
+        	if (forceNextEater != null)
+        	{
+        		tok = forceNextEater(ref src);
+        		forceNextEater = null;
+        		if (!tok.HasValue)
+        			throw new TokeniseException(src.Location,
+        				"expected include path");
+        		return tok.Value;
+        	}
+        	
+        	if ((tok = EatEol(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatEos(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatHashInclude(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatHashMacro(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatSymbolicToken(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatCharacter(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatIdentifier(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatNumber(ref src)).HasValue) return tok.Value;
+        	if ((tok = EatString(ref src)).HasValue) return tok.Value;
+        	
+        	throw new TokeniseException(src.Location, "unexpected character");
+        }
+        
+        public void DropWhitespace(ref Source src)
+        {
+        	var m = WhitespaceRegex.Match(src.Text);
+        	src.Advance(m.Length);
+        }
+        
+        public Token? EatEol(ref Source src)
+        {
+        	var m = EolRegex.Match(src.Text);
+        	if (!m.Success)
+        		return null;
+        	
+        	var loc = src.Location + m.Length;
+        	
+        	return new Token()
+        	{
+        		Type = TokenType.Eol,
+        		Location = loc,
+        		Text = src.Advance(m.Length),
+        		Value = null
+        	};
+        }
+        
+        public Token? EatEos(ref Source src)
+        {
+        	var m = EosRegex.Match(src.Text);
+        	if (!m.Success)
+        		return null;
+        	
+        	var loc = src.Location + m.Length;
+        	
+        	return new Token()
+        	{
+        		Type = TokenType.Eos,
+        		Location = loc,
+        		Text = src.Advance(m.Length),
+        		Value = null
+        	};
+        }
+        
+        public Token? EatHashInclude(ref Source src)
+        {
+        	var m = HashIncludeRegex.Match(src.Text);
+        	if (!m.Success)
+        		return null;
+        	
+        	var loc = src.Location + m.Length;
+        	
+        	forceNextEater = EatIncludePath;
+        	
+        	return new Token()
+        	{
+        		Type = TokenType.HashInclude,
+        		Location = loc,
+        		Text = src.Advance(m.Length),
+        		Value = null
+        	};
+        }
+        
+        public Token? EatHashMacro(ref Source src)
+        {
+        	var m = HashMacroRegex.Match(src.Text);
+        	if (!m.Success)
+        		return null;
+        	
+        	var loc = src.Location + m.Length;
+        	
+        	return new Token()
+        	{
+        		Type = TokenType.HashMacro,
+        		Location = loc,
+        		Text = src.Advance(m.Length),
+        		ValueType = null
+        	};
+        }
+        
+        public Token? EatIncludePath(ref Source src)
+        {
+        	var m = IncludePathRegex.Match(src.Text);
+        	if (!m.Success)
+        		return null;
+        	
+        	var loc = src.Location + m.Length;
+        	
+        	return new Token()
+        	{
+        		Type = TokenType.IncludePath,
+        		Location = loc,
+        		Text = src.Advance(m.Length),
+        		Value = m.Groups["value"].Value
+        	};
+        }
 
         public Token? EatNumber(ref Source src)
         {
@@ -186,7 +369,7 @@ namespace Dk.Dasm
                 {
                     // If we got null, then we've got an invalid character literal
                     // anyway...
-                    value = peekEscape(gValue.Value, out len).Value;
+                    value = parseCharacter(gValue.Value, out len).Value;
                 }
                 catch (Exception ex)
                 {
@@ -209,10 +392,61 @@ namespace Dk.Dasm
             };
         }
 
-        public Token? EatStringToken(ref Source src)
+        public Token? EatString(ref Source src)
         {
-            // LASTEDIT
-            throw new NotImplementedException();
+            var m = StringRegex.Match(src.Text);
+            if (!m.Success)
+                return null;
+
+            var gFormat = m.Groups["format"];
+            var gValue = m.Groups["value"];
+
+            var loc = src.Location + m.Length;
+
+            var format = formatFromPrefix(gFormat.Value);
+            string value = "";
+            
+            var input = gValue.Value;
+            
+            while (input.Length > 0)
+            {
+            	int len;
+            	var ch = parseCharacter(input, out len);
+            	
+            	input = input.Substring(len);
+            	
+            	if (!ch.HasValue)
+            		continue;
+            	
+            	value += (char)(format | (ushort)ch.Value);
+            }
+            
+            return new Token()
+            {
+                Type = TokenType.String,
+                Location = loc,
+                Text = src.Advance(loc.Span),
+                Value = value
+            };
+        }
+        
+        public Token? EatIdentifier(ref Source src)
+        {
+            var m = IdentifierRegex.Match(src.Text);
+            if (!m.Success)
+                return null;
+
+            var gValue = m.Groups["value"];
+
+            var loc = src.Location + m.Length;
+
+            return new Token()
+            {
+                Type = TokenType.Identifier,
+                Location = loc,
+                Text = src.Advance(loc.Span),
+                Value = gValue.Value
+            };
         }
 
         public Token? EatSymbolicToken(ref Source src)
@@ -258,11 +492,11 @@ namespace Dk.Dasm
             }
         }
 
-        private char? peekEscape(string text, out int length)
+        private char? parseCharacter(string text, out int length)
         {
             length = 0;
             if (text.SafeNth(0) != '\\')
-                return null;
+            	return text.SafeNth(0);
 
             // Common case
             length = 2;
