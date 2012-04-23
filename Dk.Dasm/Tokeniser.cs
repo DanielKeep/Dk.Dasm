@@ -42,8 +42,8 @@ namespace Dk.Dasm
         public bool SignedNumbers = false;
         public bool UnderscoreInNumbers = false;
         public bool BinaryLiterals = false;
-
-        public bool CharacterFormatting = false;
+        public bool FormatPrefix = false;
+        public bool LocalLabels = false;
     }
 
     public class Tokeniser
@@ -51,6 +51,11 @@ namespace Dk.Dasm
         public Tokeniser(TokeniserOptions options)
         {
             var us = options.UnderscoreInNumbers ? "_" : "";
+
+            string formatPrefix = "(?<format>)";
+
+            if (options.FormatPrefix)
+                formatPrefix = @"(?<format>[RrYyGgAaBbPpZzWw]([RrYyGgAaBbPpZzWw]([!])?)?)?";
 
             {
                 var pattern = "^";
@@ -72,14 +77,33 @@ namespace Dk.Dasm
             {
                 var pattern = "^";
 
-                if (options.CharacterFormatting)
-                    pattern += @"(?<format>[RrYyGgAaBbPpZzWw]([RrYyGgAaBbPpZzWw]([!])?)?)?";
-                else
-                    pattern += @"(?<format>)";
-
+                pattern += formatPrefix;
                 pattern += @"\s*'(?<value>[^'\\]|\\'|\\[^']+)'";
 
                 CharacterRegex = new Regex(pattern);
+            }
+            {
+                var pattern = "^";
+
+                pattern += formatPrefix;
+                pattern += @"""(?<value>([^""\\]+|\\""|\\[^""]+)*)""";
+
+                StringRegex = new Regex(pattern);
+            }
+            {
+                var pattern = "^";
+
+                pattern += "(?<value>";
+
+                if (options.LocalLabels)
+                    pattern += @"[.a-z0-9_]";
+                else
+                    pattern += @"[a-z_]";
+
+                pattern += @"[a-z0-9_]*";
+                pattern += ")";
+
+                IdentifierRegex = new Regex(pattern, RegexOptions.IgnoreCase);
             }
         }
 
@@ -87,6 +111,8 @@ namespace Dk.Dasm
 
         private Regex NumberRegex;
         private Regex CharacterRegex;
+        private Regex StringRegex;
+        private Regex IdentifierRegex;
 
         public Token? EatNumber(ref Source src)
         {
