@@ -46,8 +46,10 @@
     <Compile Include="DasmStdGrammar.cs" />
     <Compile Include="Dcpu\Instruction.cs" />
     <Compile Include="Codegen\Exceptions.cs" />
+    <Compile Include="Parser.cs" />
     <Compile Include="ParseTreeNodeExtension.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Tokeniser.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
