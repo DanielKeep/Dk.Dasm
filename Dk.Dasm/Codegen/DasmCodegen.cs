@@ -653,7 +653,9 @@ namespace Dk.Dasm.Codegen
                 case "StackPeek": return 0x19;
                 case "StackPick":
                     // Use length-1 since we could have either [sp,+,N] or [pick,N].
-                    tail = EvalLiteralWord(node.ChildNodes[node.ChildNodes.Count - 1], ref ctx);
+                    var pick = node.ChildNodes[0];
+                    var off = pick.ChildNodes[pick.ChildNodes.Count - 1];
+                    tail = EvalLiteralWordAtom(off, ref ctx);
                     return 0x1a;
                 default:
                     throw new UnexpectedGrammarException();
