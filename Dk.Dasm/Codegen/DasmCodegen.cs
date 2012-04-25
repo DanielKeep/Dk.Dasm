@@ -488,7 +488,7 @@ namespace Dk.Dasm.Codegen
 
             instr.BasicOpcode = BasicOpcode.Ext;
             instr.ExtOpcode = op.ChildNodes[0].Token.Text.ToExtOpcode();
-            instr.ArgB = CgArgument(arg, ref ctx, out tail, shortForm: false);
+            instr.ArgA = CgArgument(arg, ref ctx, out tail, shortForm: false);
 
             ctx.Write(new Code(instr));
             if (tail.HasValue) ctx.Write(tail.Value);
