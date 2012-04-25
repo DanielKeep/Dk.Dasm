@@ -463,8 +463,8 @@ namespace Dk.Dasm.Codegen
         public void CgBasicInstruction(ParseTreeNode node, ref CgContext ctx)
         {
             var op = node.ChildNodes[0].ChildNodes[0];
-            var argA = node.ChildNodes[1];
-            var argB = node.ChildNodes[2];
+            var argB = node.ChildNodes[1];
+            var argA = node.ChildNodes[2];
 
             Instruction instr = new Instruction();
             Code? tailA, tailB;
@@ -670,7 +670,7 @@ namespace Dk.Dasm.Codegen
             if (valueCode.Type == CodeType.Literal && !shortForm)
             {
                 if (valueCode.Value <= 30 || valueCode.Value == 0xffff)
-                    return (ushort)(32 + (ushort)(valueCode.Value-1));
+                    return (ushort)(32 + (ushort)(valueCode.Value + 1));
             }
 
             tail = valueCode;
