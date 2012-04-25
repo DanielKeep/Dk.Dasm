@@ -13,7 +13,7 @@ namespace Dk.Dasm
     /// This exists primarily so that the Irony Grammar Explorer
     /// can see it, letting me test it easily.
     /// </summary>
-    [Language("DASM", "0.1", "DCPU-16 assembly language")]
+    [Language("DASM", "0.2", "DCPU-16 assembly language")]
     public class DasmStdGrammar : DasmGrammar
     {
         public DasmStdGrammar()

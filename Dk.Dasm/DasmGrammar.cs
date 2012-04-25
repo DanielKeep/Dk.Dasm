@@ -10,7 +10,7 @@ namespace Dk.Dasm
     /// <summary>
     /// Dasm Grammar definition.
     /// </summary>
-    [Language("DASM Ex", "0.1", "DCPU-16 extended assembly language")]
+    [Language("DASM Ex", "0.2", "DCPU-16 extended assembly language")]
     public class DasmGrammar : Grammar
     {
         public DasmGrammar()
@@ -51,7 +51,7 @@ namespace Dk.Dasm
             var BasicInstruction = new NonTerminal("BasicInstruction");
             var ExtInstruction = new NonTerminal("ExtInstruction");
             var Data = new NonTerminal("Data");
-            var BasicArgument = new NonTerminal("BasicArgument");
+            var Argument = new NonTerminal("Argument");
             var DataArguments = new NonTerminal("DataArguments");
             var DataValue = new NonTerminal("DataValue");
             var Reg = new NonTerminal("Register");
@@ -61,6 +61,7 @@ namespace Dk.Dasm
             var RegOffLookup = new NonTerminal("RegisterOffsetLookup");
             var StackOp = new NonTerminal("StackOp");
             var LiteralWord = new NonTerminal("LiteralWord");
+            var LiteralWordAtom = new NonTerminal("LiteralWordAtom");
             var LiteralLookup = new NonTerminal("LiteralLookup");
             #endregion
 
@@ -85,21 +86,25 @@ namespace Dk.Dasm
             AddressFix.Rule = atsym + LiteralWord;
 
             BasicInstruction.Rule = Named("Opcode",
-                    ToTerm("set") | "add" | "sub" | "mul" | "div" | "mod" | "shl" | "shr"
-                    | "and" | "bor" | "xor" | "ife" | "ifn" | "ifg" | "ifb"
-                ) + BasicArgument + comma + BasicArgument;
+                    ToTerm("set")
+                    | "add" | "sub" | "mul" | "div" | "mod" | "shl" | "shr"
+                    | "mli" | "dvi" | "asr"
+                    | "and" | "bor" | "xor"
+                    | "ifb" | "ifc" | "ife" | "ifn" | "ifg" | "ifa" | "ifl" | "ifu"
+                ) + Argument + comma + Argument;
 
             ExtInstruction.Rule = Named("Opcode",
                     ToTerm("jsr")
-                ) + BasicArgument;
+                    | "int" | "ing" | "ins"
+                    | "hwn" | "hwq" | "hwi"
+                ) + Argument;
 
             Data.Rule = ToTerm("dat") + DataArguments;
 
-            MarkTransient(BasicArgument);
-            BasicArgument.Rule = Reg | RegLookup | RegOffLookup
+            MarkTransient(Argument);
+            Argument.Rule = Reg | RegLookup | RegOffLookup
                 | StackOp | LiteralWord | LiteralLookup;
-            //BasicArgument.ErrorRule = SyntaxError + comma | SyntaxError + NewLine;
-
+            
             DataArguments.Rule = MakePlusRule(DataArguments, comma, DataValue);
 
             MarkTransient(DataValue);
@@ -118,7 +123,7 @@ namespace Dk.Dasm
 
             GeneralReg.Rule = ToTerm("a") | "b" | "c" | "x" | "y" | "z" | "i" | "j";
 
-            SpecialReg.Rule = ToTerm("pc") | "sp" | "o";
+            SpecialReg.Rule = ToTerm("pc") | "sp" | "ex";
 
             RegLookup.Rule = "[" + GeneralReg + "]";
 
@@ -127,9 +132,11 @@ namespace Dk.Dasm
                     | GeneralReg + (plus | minus) + LiteralWord
                 ) + "]";
 
-            StackOp.Rule = ToTerm("push") | "pop" | "peek";
-
-            var LiteralWordAtom = new NonTerminal("LiteralWordAtom");
+            StackOp.Rule = 
+                Named("StackPush", ToTerm("push") | (lbracket + "--" + "sp" + rbracket))
+                | Named("StackPop", ToTerm("pop") | (lbracket + "sp" + "++" + rbracket))
+                | Named("StackPeek", ToTerm("peek") | (lbracket + "sp" + rbracket))
+                | Named("StackPick", (ToTerm("pick") + LiteralWordAtom) | (lbracket + "sp" + plus + LiteralWordAtom + rbracket));
 
             LiteralWord.Rule = LiteralWordAtom;
 

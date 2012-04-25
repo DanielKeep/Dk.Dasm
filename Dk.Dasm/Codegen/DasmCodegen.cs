@@ -470,8 +470,8 @@ namespace Dk.Dasm.Codegen
             Code? tailA, tailB;
 
             instr.BasicOpcode = op.Term.Name.ToBasicOpcode();
-            instr.ArgA = CgBasicArgument(argA, ref ctx, out tailA);
-            instr.ArgB = CgBasicArgument(argB, ref ctx, out tailB);
+            instr.ArgA = CgArgument(argA, ref ctx, out tailA, shortForm: false);
+            instr.ArgB = CgArgument(argB, ref ctx, out tailB, shortForm: true);
 
             ctx.Write(new Code(instr));
             if (tailA.HasValue) ctx.Write(tailA.Value);
@@ -488,7 +488,7 @@ namespace Dk.Dasm.Codegen
 
             instr.BasicOpcode = BasicOpcode.Ext;
             instr.ExtOpcode = op.ChildNodes[0].Token.Text.ToExtOpcode();
-            instr.ArgB = CgBasicArgument(arg, ref ctx, out tail);
+            instr.ArgB = CgArgument(arg, ref ctx, out tail, shortForm: false);
 
             ctx.Write(new Code(instr));
             if (tail.HasValue) ctx.Write(tail.Value);
@@ -553,7 +553,7 @@ namespace Dk.Dasm.Codegen
             }
         }
 
-        public ushort CgBasicArgument(ParseTreeNode node, ref CgContext ctx, out Code? tail)
+        public ushort CgArgument(ParseTreeNode node, ref CgContext ctx, out Code? tail, bool shortForm)
         {
             switch (node.Term.Name)
             {
@@ -562,7 +562,7 @@ namespace Dk.Dasm.Codegen
                 case "RegisterLookup": return CgRegLookup(node, ref ctx, out tail);
                 case "RegisterOffsetLookup": return CgRegOffLookup(node, ref ctx, out tail);
                 case "StackOp": return CgStackOp(node, ref ctx, out tail);
-                case "LiteralWord": return CgLiteralWord(node, ref ctx, out tail);
+                case "LiteralWord": return CgLiteralWord(node, shortForm, ref ctx, out tail);
                 case "LiteralLookup": return CgLiteralLookup(node, ref ctx, out tail);
 
                 default:
@@ -599,9 +599,9 @@ namespace Dk.Dasm.Codegen
 
             switch (node.ChildNodes[0].Token.Text.ToLower())
             {
-                case "sp": return 27;
-                case "pc": return 28;
-                case "o": return 29;
+                case "sp": return 0x1b;
+                case "pc": return 0x1c;
+                case "ex": return 0x1d;
                 default:
                     throw new UnexpectedGrammarException();
             }
@@ -645,27 +645,32 @@ namespace Dk.Dasm.Codegen
         {
             tail = null;
 
-            switch (node.ChildNodes[0].Token.Text.ToLower())
+            //switch (node.ChildNodes[0].Token.Text.ToLower())
+            switch (node.ChildNodes[0].Term.Name)
             {
-                case "pop": return 24;
-                case "peek": return 25;
-                case "push": return 26;
+                case "StackPop": return 0x18; // assume in arg b
+                case "StackPush": return 0x18; // assume in arg a
+                case "StackPeek": return 0x19;
+                case "StackPick":
+                    // Use length-1 since we could have either [sp,+,N] or [pick,N].
+                    tail = EvalLiteralWord(node.ChildNodes[node.ChildNodes.Count - 1], ref ctx);
+                    return 0x1a;
                 default:
                     throw new UnexpectedGrammarException();
             }
 
         }
 
-        public ushort CgLiteralWord(ParseTreeNode node, ref CgContext ctx, out Code? tail)
+        public ushort CgLiteralWord(ParseTreeNode node, bool shortForm, ref CgContext ctx, out Code? tail)
         {
             tail = null;
 
             var valueCode = EvalLiteralWord(node, ref ctx);
 
-            if (valueCode.Type == CodeType.Literal)
+            if (valueCode.Type == CodeType.Literal && !shortForm)
             {
-                if (valueCode.Value < 32)
-                    return (ushort)(32 + valueCode.Value);
+                if (valueCode.Value <= 30 || valueCode.Value == 0xffff)
+                    return (ushort)(32 + (ushort)(valueCode.Value-1));
             }
 
             tail = valueCode;

@@ -106,29 +106,16 @@ namespace Dk.Dasm.Dcpu
         {
             get
             {
-                return (BasicOpcode)(this.Value & 0xF);
+                return (BasicOpcode)(this.Value & 0x1F);
             }
             set
             {
-                var old = this.Value & ~0xF;
+                var old = this.Value & ~0x001F;
                 this.Value = (ushort)(old | ((ushort)value));
             }
         }
 
         public ushort ArgA
-        {
-            get
-            {
-                return (ushort)((this.Value >> 4) & 0x3F);
-            }
-            set
-            {
-                var old = this.Value & ~0x3F0;
-                this.Value = (ushort)(old | (((ushort)value & 0x3F) << 4));
-            }
-        }
-
-        public ushort ArgB
         {
             get
             {
@@ -141,15 +128,30 @@ namespace Dk.Dasm.Dcpu
             }
         }
 
+        public ushort ArgB
+        {
+            get
+            {
+                return (ushort)((this.Value >> 5) & 0x1F);
+            }
+            set
+            {
+                if (value >= 0x20)
+                    throw new ArgumentOutOfRangeException("value", "instruction argument B must be <= 0x1f");
+                var old = this.Value & ~0x03E0;
+                this.Value = (ushort)(old | (((ushort)value & 0x1F) << 5));
+            }
+        }
+
         public ExtOpcode ExtOpcode
         {
             get
             {
-                return (ExtOpcode)ArgA;
+                return (ExtOpcode)ArgB;
             }
             set
             {
-                this.ArgA = (ushort)value;
+                this.ArgB = (ushort)value;
             }
         }
 
@@ -172,22 +174,22 @@ namespace Dk.Dasm.Dcpu
 
     public enum BasicOpcode
     {
-        Ext, Set, Add, Sub, Mul, Div, Mod, Shl,
-        Shr, And, Bor, Xor, Ife, Ifn, Ifg, Ifb,
+        Ext, Set, Add, Sub, Mul, Mli, Div, Dvi,
+        Mod, And, Bor, Xor, Shr, Asr, Shl, B0E,
+        Ifb, Ifc, Ife, Ifn, Ifg, Ifa, Ifl, Ifu,
+        B18, B19, B1A, B1B, B1C, B1D, B1E, B1F,
+
+        Max = B1F,
     }
 
     public enum ExtOpcode
     {
         X00, Jsr, X02, X03, X04, X05, X06, X07,
-        X08, X09, X0A, X0B, X0C, X0D, X0E, X0F,
-        X10, X11, X12, X13, X14, X15, X16, X17,
+        Int, Ing, Ins, X0B, X0C, X0D, X0E, X0F,
+        Hwn, Hwq, Hwi, X13, X14, X15, X16, X17,
         X18, X19, X1A, X1B, X1C, X1D, X1E, X1F,
-        X20, X21, X22, X23, X24, X25, X26, X27,
-        X28, X29, X2A, X2B, X2C, X2D, X2E, X2F,
-        X30, X31, X32, X33, X34, X35, X36, X37,
-        X38, X39, X3A, X3B, X3C, X3D, Brk, Hlt,
 
-        LastDefined = Jsr
+        Max = X1F,
     }
 
     public static class OpcodeExtensions
@@ -195,11 +197,11 @@ namespace Dk.Dasm.Dcpu
         static OpcodeExtensions()
         {
             BasicOpcodeMap = new Dictionary<string, BasicOpcode>();
-            for (var i = 1; i < 16; ++i)
+            for (var i = 1; i < (int)BasicOpcode.Max; ++i)
                 BasicOpcodeMap[((BasicOpcode)i).ToString().ToLower()] = (BasicOpcode)i;
 
             ExtOpcodeMap = new Dictionary<string, ExtOpcode>();
-            for (var i = 0; i < 64; ++i)
+            for (var i = 0; i < (int)ExtOpcode.Max; ++i)
                 ExtOpcodeMap[((ExtOpcode)i).ToString().ToLower()] = (ExtOpcode)i;
         }
 
