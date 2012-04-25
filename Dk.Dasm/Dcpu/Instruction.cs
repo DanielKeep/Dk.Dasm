@@ -175,9 +175,9 @@ namespace Dk.Dasm.Dcpu
     public enum BasicOpcode
     {
         Ext, Set, Add, Sub, Mul, Mli, Div, Dvi,
-        Mod, And, Bor, Xor, Shr, Asr, Shl, B0E,
+        Mod, And, Bor, Xor, Shr, Asr, Shl, Mvi,
         Ifb, Ifc, Ife, Ifn, Ifg, Ifa, Ifl, Ifu,
-        B18, B19, B1A, B1B, B1C, B1D, B1E, B1F,
+        B18, B19, Adx, Sux, B1C, B1D, B1E, B1F,
 
         Max = B1F,
     }
@@ -185,7 +185,7 @@ namespace Dk.Dasm.Dcpu
     public enum ExtOpcode
     {
         X00, Jsr, X02, X03, X04, X05, X06, X07,
-        Int, Ing, Ins, X0B, X0C, X0D, X0E, X0F,
+        Int, Iag, Ias, X0B, X0C, X0D, X0E, X0F,
         Hwn, Hwq, Hwi, X13, X14, X15, X16, X17,
         X18, X19, X1A, X1B, X1C, X1D, X1E, X1F,
 
